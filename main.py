@@ -196,6 +196,7 @@ async def shutdown_scheduler():
 # --- Endpoints ---
 
 @app.get("/ping")
+@app.head("/ping")
 async def ping():
     return {"status": "alive"}
 
