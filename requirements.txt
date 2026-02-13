@@ -1,0 +1,5 @@
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+yt-dlp>=2024.12.13  # Pinned to a recent stable version, but will be auto-updated
+apscheduler==3.10.4
+requests==2.31.0
