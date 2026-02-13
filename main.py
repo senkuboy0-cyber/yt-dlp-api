@@ -32,6 +32,7 @@ app.add_middleware(
 class VideoFormat(BaseModel):
     format_id: str
     ext: str
+    url: Optional[str] = None  
     resolution: Optional[str] = None
     filesize: Optional[int] = None
     note: Optional[str] = None
@@ -78,17 +79,15 @@ def process_formats(formats: List[Dict[str, Any]]) -> Dict[str, List[VideoFormat
     video_with_audio = []
     video_only = []
     audio_only = []
-
-    # Use a dictionary to deduplicate video_only streams by resolution
-    # Key: resolution (e.g., '1080p'), Value: format dict
     video_only_best = {}
 
     for f in formats:
-        # Skip DASH manifests and HLS playlists if they are just containers for other streams
-        if f.get('protocol') == 'm3u8_native' or f.get('protocol') == 'http_dash_segments':
-             # Often these are redundant if direct links exist, but for some sites they are the only option.
-             # We'll include them if they are distinct.
-             pass
+        # ডাউনলোড লিঙ্ক (URL) সংগ্রহ করা
+        download_url = f.get('url') or f.get('manifest_url')
+        
+        # যদি লিঙ্ক না থাকে, তবে এই ফরম্যাটটি স্কিপ করা হবে
+        if not download_url:
+            continue
 
         fmt_id = f.get('format_id')
         ext = f.get('ext')
@@ -98,12 +97,13 @@ def process_formats(formats: List[Dict[str, Any]]) -> Dict[str, List[VideoFormat
         vcodec = f.get('vcodec', 'none')
         acodec = f.get('acodec', 'none')
         fps = f.get('fps')
-        tbr = f.get('tbr') or f.get('abr') # simplified bitrate
+        tbr = f.get('tbr') or f.get('abr')
 
-        # Construct helper object
+        # VideoFormat অবজেক্ট তৈরি (এখানে url=download_url যোগ করা হয়েছে)
         vf = VideoFormat(
             format_id=fmt_id,
             ext=ext,
+            url=download_url, # এটিই বাটন কাজ না করার প্রধান কারণ ছিল
             resolution=resolution,
             filesize=filesize,
             note=note,
@@ -248,9 +248,9 @@ async def get_info(url: str = Query(..., description="The URL of the video to ex
         raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
 
 def _extract(url: str, opts: dict):
+    opts['cookiefile'] = 'cookies.txt' 
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
