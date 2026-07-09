@@ -7,6 +7,7 @@ import re
 from typing import List, Optional, Any, Dict
 from datetime import datetime
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -94,8 +95,12 @@ def process_formats(formats: List[Dict[str, Any]]) -> Dict[str, List[VideoFormat
         resolution = f.get('resolution') or f"{f.get('width', '?')}x{f.get('height', '?')}"
         filesize = f.get('filesize') or f.get('filesize_approx')
         note = f.get('format_note', '')
-        vcodec = f.get('vcodec', 'none')
-        acodec = f.get('acodec', 'none')
+
+        vcodec_val = f.get('vcodec')
+        acodec_val = f.get('acodec')
+        vcodec = str(vcodec_val) if vcodec_val is not None else 'none'
+        acodec = str(acodec_val) if acodec_val is not None else 'none'
+
         fps = f.get('fps')
         tbr = f.get('tbr') or f.get('abr')
 
@@ -178,9 +183,9 @@ def get_highest_res_thumbnail(thumbnails: List[Dict[str, Any]]) -> str:
 
 scheduler = AsyncIOScheduler()
 
-
-@app.on_event("startup")
-async def start_scheduler():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
     scheduler.add_job(
         run_update_ytdlp,
         IntervalTrigger(hours=24),
@@ -188,15 +193,16 @@ async def start_scheduler():
         replace_existing=True,
         next_run_time=datetime.now()
     )
-
     scheduler.start()
     logger.info("Scheduler started. yt-dlp auto-update configured.")
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_scheduler():
+    # Shutdown
     scheduler.shutdown()
     logger.info("Scheduler shut down.")
+
+app.router.lifespan_context = lifespan
 
 
 @app.get("/ping")
@@ -225,14 +231,14 @@ async def get_info(url: str = Query(..., description="The URL of the video to ex
             thumbnail = info_dict.get('thumbnail', '')
 
         return VideoMetadata(
-            id=info_dict.get('id', 'unknown'),
-            title=info_dict.get('title', 'Unknown Title'),
-            description=info_dict.get('description', ''),
-            uploader=info_dict.get('uploader', 'Unknown Uploader'),
-            duration=info_dict.get('duration', 0) or 0,
+            id=info_dict.get('id') or 'unknown',
+            title=info_dict.get('title') or 'Unknown Title',
+            description=info_dict.get('description') or '',
+            uploader=info_dict.get('uploader') or 'Unknown Uploader',
+            duration=int(info_dict.get('duration') or 0),
             thumbnail=thumbnail,
-            platform=info_dict.get('extractor', 'unknown'),
-            view_count=info_dict.get('view_count'),
+            platform=info_dict.get('extractor') or 'unknown',
+            view_count=int(info_dict.get('view_count') or 0) if info_dict.get('view_count') is not None else None,
             upload_date=info_dict.get('upload_date'),
             video_with_audio=formats_categorized['video_with_audio'],
             video_only=formats_categorized['video_only'],
